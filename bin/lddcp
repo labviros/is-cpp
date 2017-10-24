@@ -1,0 +1,8 @@
+#/bin/bash
+
+libs=`ldd $1 | awk 'BEGIN{ORS=" "}$1~/^\//{print $1}$3~/^\//{print $3}' | sed 's/,$/\n/'`
+
+for lib in $libs; do
+  echo "Copying $lib to $2"
+  cp $lib $2
+done
