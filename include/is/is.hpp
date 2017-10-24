@@ -255,6 +255,10 @@ std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = t
   return id;
 }
 
+void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue, std::string const& topic) {
+  channel->BindQueue(queue, "is", topic);
+}
+
 void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
              pb::Message const& proto) {
   auto message = pack_proto(proto);

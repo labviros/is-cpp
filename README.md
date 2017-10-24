@@ -6,6 +6,18 @@ Messages payload are serialized using the protobuf binary format. Protocol buffe
  
 Dependencies
 --------------
+Network / Serialization / Logging: 
+- [Boost](http://www.boost.org/)
+- [SimpleAmqpClient](https://github.com/alanxz/SimpleAmqpClient)
+- [rabbitmq-c](https://github.com/alanxz/rabbitmq-c)
+- [protobuf](https://github.com/google/protobuf)
+- [spdlog](https://github.com/gabime/spdlog)
+
+Computer Vision / Multimedia / Algebra:
+- [opencv](https://github.com/opencv/opencv)
+- [opencv_contrib](https://github.com/opencv/opencv_contrib)
+- [theora](https://github.com/xiph/theora)
+
 A installation script is provided to easily install all the dependencies on the linux platform. Just run the command below:
  **(Tested only on Ubuntu versions 14.04 and 16.04)**.
 ```shell
