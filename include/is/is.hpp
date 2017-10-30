@@ -12,6 +12,7 @@
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/optional.hpp>
+#include <boost/program_options.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -30,7 +31,7 @@ using namespace AmqpClient;
 using common::Status;
 using common::StatusCode;
 
-std::shared_ptr<spdlog::logger> logger() {
+inline std::shared_ptr<spdlog::logger> logger() {
   static auto ptr = [] {
     auto ptr = spdlog::stdout_color_mt("is");
     ptr->set_pattern("[%L][%t][%d-%m-%Y %H:%M:%S:%e] %v");
@@ -40,41 +41,40 @@ std::shared_ptr<spdlog::logger> logger() {
 }
 
 template <class... Args>
-void info(Args&&... args) {
+inline void info(Args&&... args) {
   logger()->info(args...);
 }
 
 template <class... Args>
-void warn(Args&&... args) {
+inline void warn(Args&&... args) {
   logger()->warn(args...);
 }
 
 template <class... Args>
-void error(Args&&... args) {
+inline void error(Args&&... args) {
   logger()->error(args...);
 }
 
 template <class... Args>
-void critical(Args&&... args) {
+inline void critical(Args&&... args) {
   logger()->critical(args...);
   std::exit(-1);
 }
 
-std::string make_random_uid() {
+inline std::string make_random_uid() {
   return boost::uuids::to_string(boost::uuids::random_generator()());
 }
-
-std::string hostname() {
+inline std::string hostname() {
   return boost::asio::ip::host_name();
 }
 
 // Tag to identify AMQP consumers. The hostname is used because normally container orchestration
 // tools set the container hostname to be its id. The uid part is added to avoid name collisions
-std::string consumer_id() {
+inline std::string consumer_id() {
   return fmt::format("{}/{}", hostname(), make_random_uid());
 }
 
-pb::Timestamp current_time() {
+inline pb::Timestamp current_time() {
   const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
   auto nanos = (boost::posix_time::microsec_clock::universal_time() - epoch).total_nanoseconds();
   pb::Timestamp timestamp;
@@ -83,14 +83,14 @@ pb::Timestamp current_time() {
   return timestamp;
 }
 
-Status make_status(StatusCode code, std::string const& why = "") {
+inline Status make_status(StatusCode code, std::string const& why = "") {
   Status status;
   status.set_code(code);
   status.set_why(why);
   return status;
 }
 
-StatusCode rpc_status(rmq::Envelope::ptr_t const& envelope) {
+inline StatusCode rpc_status(rmq::Envelope::ptr_t const& envelope) {
   if (!envelope->Message()->HeaderTableIsSet()) return StatusCode::UNKNOWN;
   Status status;
   pb::JsonStringToMessage(envelope->Message()->HeaderTable()["rpc-status"].GetString(), &status);
@@ -242,11 +242,11 @@ class ServiceProvider {
       serve(envelope);
     }
   }
-};
+}; // class ServiceProvider
 
 // Declare a queue using reasonable defaults
-std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
-                          int prefetch_n = -1) {
+inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
+                                 int prefetch_n = -1) {
   std::string id = consumer_id();
   bool noack = prefetch_n == -1 ? true : false;
   channel->DeclareExchange("is", "topic");
@@ -255,17 +255,88 @@ std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = t
   return id;
 }
 
-void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue, std::string const& topic) {
+inline void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                      std::string const& topic) {
   channel->BindQueue(queue, "is", topic);
 }
 
-void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
-             pb::Message const& proto) {
+inline void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                      std::vector<std::string> const& topics) {
+  for (auto&& topic : topics)
+    subscribe(channel, queue, topic);
+}
+
+inline void unsubscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                        std::string const& topic) {
+  channel->UnbindQueue(queue, "is", topic);
+}
+
+inline void unsubscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                        std::vector<std::string> const& topics) {
+  for (auto&& topic : topics)
+    unsubscribe(channel, queue, topic);
+}
+
+inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
+                    pb::Message const& proto) {
   auto message = pack_proto(proto);
   message->Timestamp(pb::TimeUtil::TimestampToMilliseconds(current_time()));
   channel->BasicPublish("is", topic, message);
 }
 
-}  // ::is
+namespace po = boost::program_options;
+
+po::options_description add_common_options(po::options_description const& others) {
+  po::options_description description("Common options");
+  auto&& options = description.add_options();
+  description.add(others);
+
+  options("help,h", "show available options");
+  options("uri,u", po::value<std::string>()->required(), "amqp broker uri");
+  return description;
+}
+
+po::variables_map parse_program_options(int argc, char** argv,
+                                        po::options_description const& description) {
+  auto print_help = [&] {
+    std::cout << description << std::endl;
+    std::exit(0);
+  };
+
+  auto environment_map = [](std::string env) -> std::string {
+    std::string prefix("IS_");
+
+    auto starts_with = [](std::string const& s, std::string const& prefix) {
+      return s.compare(0, prefix.size(), prefix) == 0;
+    };
+
+    if (!starts_with(env, prefix)) return "";
+
+    auto cropped_to_lower_snake_case = [&](std::string& s) {
+      auto first = s.begin();
+      std::advance(first, prefix.size());
+      std::transform(first, s.end(), first,
+                     [](char c) { return c == '_' ? '-' : std::tolower(c); });
+      return s.substr(prefix.size());
+    };
+
+    return cropped_to_lower_snake_case(env);
+  };
+
+  po::variables_map vm;
+  try {
+    po::store(po::parse_command_line(argc, argv, description), vm);
+    po::store(po::parse_environment(description, environment_map), vm);
+    po::notify(vm);
+  } catch (std::exception const& e) {
+    std::cout << "Error parsing program options: " << e.what() << "\n";
+    print_help();
+  }
+
+  if (vm.count("help")) print_help();
+  return vm;
+}
+
+}  // namespace is
 
 #endif  // __IS_HPP__

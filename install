@@ -55,7 +55,7 @@ function install::cmake {
 	cd $path
 	mkdir -p build
 	cd build
-	cmake $@ ..
+	cmake -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ $@ ..
 	make install -j `nproc`
 	cd $INSTALL_PATH
 }
@@ -64,7 +64,7 @@ function install::autogen {
 	read path
 	cd $path
 	./autogen.sh
-	./configure
+	CC=/usr/bin/clang CXX=/usr/bin/clang++ ./configure $@
 	make install -j `nproc`
 	cd $INSTALL_PATH
 }
@@ -90,7 +90,7 @@ function install::boost {
 }
 
 apt-get update && apt-get install -y --ignore-missing \
-	build-essential wget curl cmake clang clang-tidy git pkg-config autoconf libtool \
+	build-essential unzip wget curl cmake clang clang-tidy git pkg-config autoconf libtool \
 	libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
 	libssl-dev libpgm-dev libarmadillo-dev libopenblas-dev liblapack-dev liblapacke-dev \
 	libvorbis-dev libudev-dev libjpeg-dev libopenal-dev
@@ -100,7 +100,7 @@ if ! find::boost 1.63; then
 fi
 
 if ! find::pkg librabbitmq; then
-	import::git ${GIT_URL}/labviros/rabbitmq-c | install::cmake 
+	import::git ${GIT_URL}/labviros/rabbitmq-c | install::cmake -DCMAKE_INSTALL_LIBDIR=lib 
 fi
 
 if ! find::pkg libSimpleAmqpClient; then
@@ -124,9 +124,8 @@ if ! find::pkg "theoradec theoraenc theora"; then
 	import::git ${GIT_URL}/labviros/theora | install::autogen
 fi
 
-if ! find::pkg /usr/local/include/is; then
-	import::git ${GIT_URL}/labviros/is-cpp | install::header_only
-fi
+import::git ${GIT_URL}/labviros/is-cpp2 | install::cmake
+import::git ${GIT_URL}/labviros/is-msgs | install::cmake
 
 ldconfig
 

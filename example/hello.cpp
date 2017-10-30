@@ -9,9 +9,27 @@ using namespace AmqpClient;
 using hello::Hello;
 using boost::optional;
 
+/* @Simple Publisher/Consumer. This example describes how to:
+  - Read input from command line arguments;
+  - Subscribe to a topic of interest;
+  - Create, serialize and publish a custom message to a topic;
+  - Consume and deserialize a message from a topic;
+
+  To run the example with a broker running on localhost:
+  $ ./hello --uri amqp://localhost:5672
+  or
+  $ IS_URI=amqp://localhost:5672 ./hello
+*/
 int main(int argc, char** argv) {
+  std::string uri;
+
+  // Define our parser to read command line arguments
+  is::po::options_description opts("Options");
+  opts.add_options()("uri,u", is::po::value<std::string>(&uri)->required(), "amqp broker uri");
+  is::parse_program_options(argc, argv, opts);
+
   // Connect to the AMQP broker
-  rmq::Channel::ptr_t channel = rmq::Channel::CreateFromUri("amqp://rmq.is:30000");
+  rmq::Channel::ptr_t channel = rmq::Channel::CreateFromUri(uri);
   is::info("Connected to broker...");
 
   // Declares a queue on the broker to storage messages "that we are interested"
@@ -29,20 +47,21 @@ int main(int argc, char** argv) {
   // Publishes our custom message to the "got.weather" topic. As we subscribed to this topic we are
   // also going to receive it.
   is::publish(channel, "got.weather", hello);
+  is::info("Published message");
 
   // Note that, a publisher and a consumer of the same topic are normally not on the same process.
   // This is just an usage example...
 
   // Consume one message from our queue. (Blocking Call)
   rmq::Envelope::ptr_t envelope = channel->BasicConsumeMessage(queue);
-  is::info("Received: message on topic=\"{}\"", envelope->RoutingKey());
+  is::info(R"(Received: message on topic="{}")", envelope->RoutingKey());
 
   // Tries to deserialize message, this can fail if the content of the message does not match the
   // object we are trying to deserialize.
   optional<Hello> maybe_hello = is::unpack<Hello>(envelope);
   if (maybe_hello) {
-    // Deserialization was successful
-    is::info("text:\"{}\", author:\"{}\", n:{}", maybe_hello->text(), maybe_hello->author(),
+    // Deserialization was successful, print the message we received
+    is::info(R"(text:"{}", author:"{}", n:{})", maybe_hello->text(), maybe_hello->author(),
              maybe_hello->n());
   }
 }
