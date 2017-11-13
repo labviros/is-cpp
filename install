@@ -58,6 +58,7 @@ function install::cmake {
 	cmake -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ $@ ..
 	make install -j `nproc`
 	cd $INSTALL_PATH
+	ldconfig
 }
 
 function install::autogen {
@@ -67,6 +68,7 @@ function install::autogen {
 	CC=/usr/bin/clang CXX=/usr/bin/clang++ ./configure $@
 	make install -j `nproc`
 	cd $INSTALL_PATH
+	ldconfig
 }
 
 function install::header_only {

@@ -242,17 +242,24 @@ class ServiceProvider {
       serve(envelope);
     }
   }
-}; // class ServiceProvider
+};  // class ServiceProvider
+
+inline std::string declare_queue(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                                 std::string const& tag, bool exclusive = true,
+                                 int prefetch_n = -1) {
+  bool noack = prefetch_n == -1 ? true : false;
+  channel->DeclareExchange("is", "topic");
+  channel->DeclareQueue(queue, /*passive*/ false, /*durable*/ false, exclusive,
+                        /*autodelete*/ true);
+  channel->BasicConsume(queue, tag, /*nolocal*/ false, noack, exclusive, prefetch_n);
+  return tag;
+}
 
 // Declare a queue using reasonable defaults
 inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
                                  int prefetch_n = -1) {
-  std::string id = consumer_id();
-  bool noack = prefetch_n == -1 ? true : false;
-  channel->DeclareExchange("is", "topic");
-  channel->DeclareQueue(id, /*passive*/ false, /*durable*/ false, exclusive, /*autodelete*/ true);
-  channel->BasicConsume(id, id, /*nolocal*/ false, noack, exclusive, prefetch_n);
-  return id;
+  auto tag = consumer_id();
+  return declare_queue(channel, tag, tag, exclusive, prefetch_n);
 }
 
 inline void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
