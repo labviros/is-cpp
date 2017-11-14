@@ -32,10 +32,11 @@ int main(int argc, char** argv) {
   rmq::Channel::ptr_t channel = rmq::Channel::CreateFromUri(uri);
   is::info("Connected to broker...");
 
-  // Declares a queue on the broker to storage messages "that we are interested"
-  std::string queue = is::declare_queue(channel);
+  // Declares a queue on the broker to storage messages "that we are interested".
+  // This will return our consumer tag. By default queue and tag names are equal.
+  std::string tag = is::declare_queue(channel);
   // Tell the broker that we are interested in messages published on the topic "got.weather"
-  is::subscribe(channel, queue, "got.weather");
+  is::subscribe(channel, tag, "got.weather");
 
   // Instantiated a Hello message that we defined in msgs/hello.proto
   Hello hello;
@@ -52,8 +53,8 @@ int main(int argc, char** argv) {
   // Note that, a publisher and a consumer of the same topic are normally not on the same process.
   // This is just an usage example...
 
-  // Consume one message from our queue. (Blocking Call)
-  rmq::Envelope::ptr_t envelope = channel->BasicConsumeMessage(queue);
+  // Consume one message from our queue. (Blocks forever)
+  rmq::Envelope::ptr_t envelope = is::consume(channel, tag);
   is::info(R"(Received: message on topic="{}")", envelope->RoutingKey());
 
   // Tries to deserialize message, this can fail if the content of the message does not match the

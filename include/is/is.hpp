@@ -22,11 +22,13 @@ namespace is {
 namespace pb {
 using namespace google::protobuf::util;
 using namespace google::protobuf;
-}
+}  // namespace pb
 
 namespace rmq {
 using namespace AmqpClient;
 }
+
+namespace po = boost::program_options;
 
 using common::Status;
 using common::StatusCode;
@@ -90,11 +92,13 @@ inline Status make_status(StatusCode code, std::string const& why = "") {
   return status;
 }
 
-inline StatusCode rpc_status(rmq::Envelope::ptr_t const& envelope) {
-  if (!envelope->Message()->HeaderTableIsSet()) return StatusCode::UNKNOWN;
-  Status status;
-  pb::JsonStringToMessage(envelope->Message()->HeaderTable()["rpc-status"].GetString(), &status);
-  return status.code();
+inline Status rpc_status(rmq::Envelope::ptr_t const& envelope) {
+  if (envelope->Message()->HeaderTableIsSet()) {
+    Status status;
+    pb::JsonStringToMessage(envelope->Message()->HeaderTable()["rpc-status"].GetString(), &status);
+    return status;
+  }
+  return make_status(StatusCode::UNKNOWN, "Status not set");
 }
 
 template <typename T>
@@ -182,6 +186,7 @@ class ServiceProvider {
   void connect(rmq::Channel::ptr_t const& new_channel) { channel = new_channel; }
 
   rmq::Channel::ptr_t const& get_underlying_channel() const { return channel; }
+  std::string const& get_tag() const { return tag; }
 
   std::string make_queue(std::string name, std::string const& id) const {
     auto exclusive = !id.empty();
@@ -224,7 +229,8 @@ class ServiceProvider {
 
   void serve(rmq::Envelope::ptr_t const& envelope) const {
     const Defer ack([&] { channel->BasicAck(envelope); });
-    if (!envelope->Message()->ReplyToIsSet()) return;
+    if (!envelope->Message()->ReplyToIsSet())
+      return;  // User did not specified a reply topic, no point in processing this request
 
     auto method = methods.find(envelope->RoutingKey());
     if (method == methods.end()) return;
@@ -243,24 +249,6 @@ class ServiceProvider {
     }
   }
 };  // class ServiceProvider
-
-inline std::string declare_queue(rmq::Channel::ptr_t const& channel, std::string const& queue,
-                                 std::string const& tag, bool exclusive = true,
-                                 int prefetch_n = -1) {
-  bool noack = prefetch_n == -1 ? true : false;
-  channel->DeclareExchange("is", "topic");
-  channel->DeclareQueue(queue, /*passive*/ false, /*durable*/ false, exclusive,
-                        /*autodelete*/ true);
-  channel->BasicConsume(queue, tag, /*nolocal*/ false, noack, exclusive, prefetch_n);
-  return tag;
-}
-
-// Declare a queue using reasonable defaults
-inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
-                                 int prefetch_n = -1) {
-  auto tag = consumer_id();
-  return declare_queue(channel, tag, tag, exclusive, prefetch_n);
-}
 
 inline void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
                       std::string const& topic) {
@@ -284,6 +272,25 @@ inline void unsubscribe(rmq::Channel::ptr_t const& channel, std::string const& q
     unsubscribe(channel, queue, topic);
 }
 
+inline std::string declare_queue(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                                 std::string const& tag, bool exclusive = true,
+                                 int prefetch_n = -1) {
+  bool noack = prefetch_n == -1 ? true : false;
+  channel->DeclareExchange("is", "topic");
+  channel->DeclareQueue(queue, /*passive*/ false, /*durable*/ false, exclusive,
+                        /*autodelete*/ true);
+  channel->BasicConsume(queue, tag, /*nolocal*/ false, noack, exclusive, prefetch_n);
+  subscribe(channel, queue, queue);
+  return tag;
+}
+
+// Declare a queue using reasonable defaults
+inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
+                                 int prefetch_n = -1) {
+  auto tag = consumer_id();
+  return declare_queue(channel, tag, tag, exclusive, prefetch_n);
+}
+
 inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
                     pb::Message const& proto) {
   auto message = pack_proto(proto);
@@ -291,7 +298,49 @@ inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic
   channel->BasicPublish("is", topic, message);
 }
 
-namespace po = boost::program_options;
+inline std::string request(rmq::Channel::ptr_t const& channel, std::string const& queue,
+                           std::string const& endpoint, pb::Message const& proto) {
+  auto message = is::pack_proto(proto);
+  auto id = is::make_random_uid();
+  message->ReplyTo(queue);
+  message->CorrelationId(id);
+  channel->BasicPublish("is", endpoint, message);
+  return id;
+}
+
+inline rmq::Envelope::ptr_t consume(rmq::Channel::ptr_t const& channel) {
+  return channel->BasicConsumeMessage();
+}
+
+inline rmq::Envelope::ptr_t consume_for(rmq::Channel::ptr_t const& channel,
+                                        pb::Duration const& duration) {
+  rmq::Envelope::ptr_t envelope;
+  auto ms = pb::TimeUtil::DurationToMilliseconds(duration);
+  if (ms >= 0) { channel->BasicConsumeMessage(envelope, ms); }
+  return envelope;
+}
+
+inline rmq::Envelope::ptr_t consume_until(rmq::Channel::ptr_t const& channel,
+                                          pb::Timestamp const& timestamp) {
+  return consume_for(channel, timestamp - current_time());
+}
+
+inline rmq::Envelope::ptr_t consume(rmq::Channel::ptr_t const& channel, std::string const& tag) {
+  return channel->BasicConsumeMessage(tag);
+}
+
+inline rmq::Envelope::ptr_t consume_for(rmq::Channel::ptr_t const& channel, std::string const& tag,
+                                        pb::Duration const& duration) {
+  rmq::Envelope::ptr_t envelope;
+  auto ms = pb::TimeUtil::DurationToMilliseconds(duration);
+  if (ms >= 0) { channel->BasicConsumeMessage(tag, envelope, ms); }
+  return envelope;
+}
+
+inline rmq::Envelope::ptr_t consume_until(rmq::Channel::ptr_t const& channel,
+                                          std::string const& tag, pb::Timestamp const& timestamp) {
+  return consume_for(channel, tag, timestamp - current_time());
+}
 
 po::options_description add_common_options(po::options_description const& others) {
   po::options_description description("Common options");
