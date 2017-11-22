@@ -7,3 +7,11 @@ message Hello {
   string author = 2;
   int32 n = 3;
 }
+
+message GreeterRequest {
+  string name = 1;
+}
+
+message GreeterReply {
+  string greeting = 1;
+}

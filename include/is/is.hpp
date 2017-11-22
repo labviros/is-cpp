@@ -7,6 +7,7 @@
 #include <google/protobuf/util/message_differencer.h>
 #include <google/protobuf/util/time_util.h>
 #include <is/msgs/common.pb.h>
+#include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
 #include <boost/asio.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
@@ -17,6 +18,15 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <fstream>
+
+// Enable logging for protobuf messages
+namespace google {
+namespace protobuf {
+std::ostream& operator<<(std::ostream& os, google::protobuf::Message const& m) {
+  return os << m.ShortDebugString();
+}
+}  // namespace protobuf
+}  // namespace google
 
 namespace is {
 
@@ -64,6 +74,18 @@ inline void critical(Args&&... args) {
   std::exit(-1);
 }
 
+inline int set_loglevel(char level) {
+  if (level == 'i')
+    spdlog::set_level(spdlog::level::info);
+  else if (level == 'w')
+    spdlog::set_level(spdlog::level::warn);
+  else if (level == 'e')
+    spdlog::set_level(spdlog::level::err);
+  else
+    return -1;  // failed
+  return 0;     // success
+}
+
 inline std::string make_random_uid() {
   return boost::uuids::to_string(boost::uuids::random_generator()());
 }
@@ -94,12 +116,12 @@ inline Status make_status(StatusCode code, std::string const& why = "") {
 }
 
 inline Status rpc_status(rmq::Envelope::ptr_t const& envelope) {
-  if (envelope->Message()->HeaderTableIsSet()) {
+  if (envelope != nullptr && envelope->Message()->HeaderTableIsSet()) {
     Status status;
     pb::JsonStringToMessage(envelope->Message()->HeaderTable()["rpc-status"].GetString(), &status);
     return status;
   }
-  return make_status(StatusCode::UNKNOWN, "Status not set");
+  return make_status(StatusCode::UNKNOWN);
 }
 
 template <typename T>
@@ -186,10 +208,10 @@ class ServiceProvider {
   void connect(std::string const& uri) { channel = rmq::Channel::CreateFromUri(uri); }
   void connect(rmq::Channel::ptr_t const& new_channel) { channel = new_channel; }
 
-  rmq::Channel::ptr_t const& get_underlying_channel() const { return channel; }
+  rmq::Channel::ptr_t const& get_channel() const { return channel; }
   std::string const& get_tag() const { return tag; }
 
-  std::string make_queue(std::string name, std::string const& id) const {
+  std::string declare_queue(std::string name, std::string const& id = "") const {
     auto exclusive = !id.empty();
     if (exclusive) name += '.' + id;
     channel->DeclareExchange("is", "topic");
@@ -199,7 +221,7 @@ class ServiceProvider {
     return name;
   }
 
-  template <typename Reply, typename Request>
+  template <typename Request, typename Reply>
   void delegate(std::string const& queue, std::string const& name,
                 std::function<Status(Request, Reply*)> method) {
     std::string binding = queue + '.' + name;
@@ -293,20 +315,30 @@ inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclus
 }
 
 inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
-                    pb::Message const& proto) {
-  auto message = pack_proto(proto);
-  message->Timestamp(pb::TimeUtil::TimestampToMilliseconds(current_time()));
+                    rmq::BasicMessage::ptr_t const& message) {
+  if (!message->TimestampIsSet())
+    message->Timestamp(pb::TimeUtil::TimestampToMilliseconds(current_time()));
   channel->BasicPublish("is", topic, message);
+}
+
+inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
+                    pb::Message const& proto) {
+  publish(channel, topic, pack_proto(proto));
+}
+
+inline rmq::BasicMessage::ptr_t prepare_request(std::string const& queue,
+                                                pb::Message const& proto) {
+  auto message = is::pack_proto(proto);
+  message->ReplyTo(queue);
+  message->CorrelationId(make_random_uid());
+  return message;
 }
 
 inline std::string request(rmq::Channel::ptr_t const& channel, std::string const& queue,
                            std::string const& endpoint, pb::Message const& proto) {
-  auto message = is::pack_proto(proto);
-  auto id = is::make_random_uid();
-  message->ReplyTo(queue);
-  message->CorrelationId(id);
-  channel->BasicPublish("is", endpoint, message);
-  return id;
+  auto message = prepare_request(queue, proto);
+  publish(channel, endpoint, message);
+  return message->CorrelationId();
 }
 
 inline rmq::Envelope::ptr_t consume(rmq::Channel::ptr_t const& channel) {
@@ -344,19 +376,22 @@ inline rmq::Envelope::ptr_t consume_until(rmq::Channel::ptr_t const& channel,
 }
 
 po::options_description add_common_options(po::options_description const& others) {
-  po::options_description description("Common options");
+  po::options_description description("Common");
   auto&& options = description.add_options();
   description.add(others);
 
-  options("help,h", "show available options");
-  options("uri,u", po::value<std::string>()->required(), "amqp broker uri");
+  options("help", "show available options");
+  options("loglevel", po::value<char>()->default_value('i'),
+          "log level: i[nfo], w[warn], e[error]");
   return description;
 }
 
 po::variables_map parse_program_options(int argc, char** argv,
-                                        po::options_description const& description) {
-  auto print_help = [&] {
-    std::cout << description << std::endl;
+                                        po::options_description const& user_options) {
+  auto description = add_common_options(user_options);
+
+  auto print_help = [&](std::string const& message = "") {
+    std::cout << message << '\n' << description << std::endl;
     std::exit(0);
   };
 
@@ -386,11 +421,15 @@ po::variables_map parse_program_options(int argc, char** argv,
     po::store(po::parse_environment(description, environment_map), vm);
     po::notify(vm);
   } catch (std::exception const& e) {
-    std::cout << "Error parsing program options: " << e.what() << "\n";
-    print_help();
+    auto error = fmt::format("Error parsing program options: {}", e.what());
+    print_help(error);
   }
 
   if (vm.count("help")) print_help();
+
+  if (set_loglevel(vm["loglevel"].as<char>()))
+    print_help(fmt::format("Invalid log level '{}'", vm["loglevel"].as<char>()));
+
   return vm;
 }
 
@@ -412,7 +451,8 @@ inline boost::optional<T> load_from_json(std::string const& filename) {
   T message;
   std::ifstream in(filename);
   std::string buffer((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  return is::pb::JsonStringToMessage(buffer, &message).ok() ? boost::optional<T>(message) : boost::none;
+  return is::pb::JsonStringToMessage(buffer, &message).ok() ? boost::optional<T>(message)
+                                                            : boost::none;
 }
 
 }  // namespace is

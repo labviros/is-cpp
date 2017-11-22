@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   // Connect to the AMQP broker
-  rmq::Channel::ptr_t channel = rmq::Channel::CreateFromUri(uri);
+  rmq::Channel::ptr_t channel = is::rmq::Channel::CreateFromUri(uri);
   is::info("Connected to broker...");
 
   // Declares a queue on the broker to storage messages "that we are interested".
