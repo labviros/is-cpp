@@ -115,15 +115,18 @@ fi
 
 if ! find::pkg opencv; then
 	import::git ${GIT_URL}/labviros/opencv_contrib
-	import::git ${GIT_URL}/labviros/opencv | install::cmake -DOPENCV_EXTRA_MODULES_PATH=${INSTALL_PATH}/opencv_contrib/modules 
+	import::git ${GIT_URL}/labviros/opencv | install::cmake \
+		-DOPENCV_EXTRA_MODULES_PATH=${INSTALL_PATH}/opencv_contrib/modules \
+		-DBUILD_PROTOBUF=OFF -D WITH_TBB=ON -D WITH_OPENMP=ON -D WITH_IPP=ON \
+		-D CMAKE_BUILD_TYPE=RELEASE -D BUILD_EXAMPLES=OFF -D WITH_NVCUVID=ON \
+		-D WITH_CUDA=ON -D BUILD_DOCS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_TESTS=OFF \
+		-D WITH_CSTRIPES=ON -D WITH_OPENCL=ON \
+		-D BUILD_opencv_python2=OFF -D BUILD_opencv_dnn=OFF -D BUILD_opencv_dnn_modern=OFF \
+		-D BUILD_opencv_dpm=OFF -D BUILD_opencv_face=ON
 fi
 
 if ! find::folder /usr/local/include/spdlog; then
 	import::git ${GIT_URL}/labviros/spdlog | install::header_only
-fi
-
-if ! find::pkg "theoradec theoraenc theora"; then
-	import::git ${GIT_URL}/labviros/theora | install::autogen
 fi
 
 import::git ${GIT_URL}/labviros/is-cpp2 | install::cmake

@@ -211,12 +211,14 @@ class ServiceProvider {
   rmq::Channel::ptr_t const& get_channel() const { return channel; }
   std::string const& get_tag() const { return tag; }
 
-  std::string declare_queue(std::string name, std::string const& id = "") const {
+  std::string declare_queue(std::string name, std::string const& id = "",
+                            int queue_size = 64) const {
     auto exclusive = !id.empty();
     if (exclusive) name += '.' + id;
     channel->DeclareExchange("is", "topic");
+    rmq::Table headers{{rmq::TableKey("x-max-length"), rmq::TableValue(queue_size)}};
     channel->DeclareQueue(name, /*passive*/ false, /*durable*/ false, exclusive,
-                          /*autodelete*/ true);
+                          /*autodelete*/ true, headers);
     channel->BasicConsume(name, tag, /*nolocal*/ true, /*noack*/ false, exclusive);
     return name;
   }
@@ -296,12 +298,13 @@ inline void unsubscribe(rmq::Channel::ptr_t const& channel, std::string const& q
 }
 
 inline std::string declare_queue(rmq::Channel::ptr_t const& channel, std::string const& queue,
-                                 std::string const& tag, bool exclusive = true,
-                                 int prefetch_n = -1) {
+                                 std::string const& tag, bool exclusive = true, int prefetch_n = -1,
+                                 int queue_size = 64) {
   bool noack = prefetch_n == -1 ? true : false;
+  rmq::Table headers{{rmq::TableKey("x-max-length"), rmq::TableValue(queue_size)}};
   channel->DeclareExchange("is", "topic");
   channel->DeclareQueue(queue, /*passive*/ false, /*durable*/ false, exclusive,
-                        /*autodelete*/ true);
+                        /*autodelete*/ true, headers);
   channel->BasicConsume(queue, tag, /*nolocal*/ false, noack, exclusive, prefetch_n);
   subscribe(channel, queue, queue);
   return tag;
@@ -309,9 +312,9 @@ inline std::string declare_queue(rmq::Channel::ptr_t const& channel, std::string
 
 // Declare a queue using reasonable defaults
 inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclusive = true,
-                                 int prefetch_n = -1) {
+                                 int prefetch_n = -1, int queue_size = 64) {
   auto tag = consumer_id();
-  return declare_queue(channel, tag, tag, exclusive, prefetch_n);
+  return declare_queue(channel, tag, tag, exclusive, prefetch_n, queue_size);
 }
 
 inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
