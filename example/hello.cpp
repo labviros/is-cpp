@@ -1,13 +1,10 @@
-#include <SimpleAmqpClient/SimpleAmqpClient.h>  // amqp client library
+#include <SimpleAmqpClient/SimpleAmqpClient.h>  // amqp client library used to connect to the broker
 #include <boost/optional.hpp>                   // value type that can be nullable
 #include "../include/is/is.hpp"                 // utility functions for c++
 #include "hello.pb.h"                           // auto generated header of our custom message
 
-namespace rmq {
-using namespace AmqpClient;
-}
-using hello::Hello;
 using boost::optional;
+using hello::Hello;
 
 /* @Simple Publisher/Consumer. This example describes how to:
   - Read input from command line arguments;
@@ -29,7 +26,7 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   // Connect to the AMQP broker
-  rmq::Channel::ptr_t channel = is::rmq::Channel::CreateFromUri(uri);
+  is::rmq::Channel::ptr_t channel = is::rmq::Channel::CreateFromUri(uri);
   is::info("Connected to broker...");
 
   // Declares a queue on the broker to storage messages "that we are interested".
@@ -54,15 +51,14 @@ int main(int argc, char** argv) {
   // This is just an usage example...
 
   // Consume one message from our queue. (Blocks forever)
-  rmq::Envelope::ptr_t envelope = is::consume(channel, tag);
-  is::info(R"(Received: message on topic="{}")", envelope->RoutingKey());
+  is::rmq::Envelope::ptr_t envelope = is::consume(channel, tag);
+  is::info(R"(New message on topic="{}")", envelope->RoutingKey());
 
   // Tries to deserialize message, this can fail if the content of the message does not match the
   // object we are trying to deserialize.
   optional<Hello> maybe_hello = is::unpack<Hello>(envelope);
   if (maybe_hello) {
     // Deserialization was successful, print the message we received
-    is::info(R"(text:"{}", author:"{}", n:{})", maybe_hello->text(), maybe_hello->author(),
-             maybe_hello->n());
+    is::info("{}", *maybe_hello);  // Protobuf messages can be passed directly to log functions
   }
 }

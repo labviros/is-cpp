@@ -1,8 +1,8 @@
 CXX = clang++
-CXXFLAGS += -std=c++14 -Werror -Wall
+CXXFLAGS += -std=c++14 -Werror -Wall -O2
 DEBUGFLAGS = # -g -fsanitize=address -fno-omit-frame-pointer 
 LDFLAGS += -L/usr/local/lib -I/usr/local/include `pkg-config --libs protobuf librabbitmq libSimpleAmqpClient`\
-           -Wl,--no-as-needed -Wl,--as-needed -ldl -lboost_system -lboost_chrono -lboost_program_options -lismsgs
+           -Wl,--no-as-needed -Wl,--as-needed -ldl -lboost_system -lboost_chrono -lboost_program_options -lismsgs -lprometheus-cpp
 PROTOC = protoc
 
 LOCAL_PROTOS_PATH = ./msgs/

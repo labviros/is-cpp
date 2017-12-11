@@ -44,9 +44,12 @@ function find::folder {
 }
 
 function import::git {
+	cd $INSTALL_PATH
 	if [ ! -d $(basename $1) ]; then
 		git clone $1
 	fi
+	cd $(basename $1)
+  git submodule update --init > /dev/null
 	echo -n $(basename $1)
 }
 
@@ -57,7 +60,6 @@ function install::cmake {
 	cd build
 	cmake -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ $@ ..
 	make install -j `nproc`
-	cd $INSTALL_PATH
 	ldconfig
 }
 
@@ -67,7 +69,6 @@ function install::autogen {
 	./autogen.sh
 	CC=/usr/bin/clang CXX=/usr/bin/clang++ ./configure $@
 	make install -j `nproc`
-	cd $INSTALL_PATH
 	ldconfig
 }
 
@@ -76,7 +77,6 @@ function install::header_only {
 	cd $path
 	cp -r include/* /usr/local/include	
 	cp -r bin/* /usr/local/bin	
-	cd $INSTALL_PATH
 }
 
 function install::boost {
@@ -88,14 +88,13 @@ function install::boost {
 	./b2 install cxxflags=-std=gnu++0x --with-timer --with-chrono --with-system --with-fiber \
 		--with-program_options --with-filesystem --with-thread --with-date_time link=shared
 	ldconfig
-	cd $INSTALL_PATH
 }
 
-apt-get update && apt-get install -y --ignore-missing \
+apt-get update && apt-get install -y \
 	build-essential unzip wget curl cmake clang clang-tidy git pkg-config autoconf libtool \
 	libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
 	libssl-dev libpgm-dev libarmadillo-dev libopenblas-dev liblapack-dev liblapacke-dev \
-	libvorbis-dev libudev-dev libjpeg-dev libopenal-dev
+	libvorbis-dev libudev-dev libjpeg-dev libopenal-dev libcurl3-dev libcurlpp-dev
 
 if ! find::boost 1.63; then
 	install::boost
@@ -127,6 +126,18 @@ fi
 
 if ! find::folder /usr/local/include/spdlog; then
 	import::git ${GIT_URL}/labviros/spdlog | install::header_only
+fi
+
+if ! find::folder /usr/local/include/prometheus; then
+	import::git ${GIT_URL}/labviros/prometheus-cpp | install::cmake
+fi
+
+if ! find::folder /usr/local/include/opentracing; then
+	import::git ${GIT_URL}/labviros/opentracing-cpp | install::cmake
+fi
+
+if ! find::folder /usr/local/include/zipkin; then
+	import::git ${GIT_URL}/labviros/zipkin-cpp-opentracing | install::cmake
 fi
 
 import::git ${GIT_URL}/labviros/is-cpp2 | install::cmake

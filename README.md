@@ -16,7 +16,6 @@ Network / Serialization / Logging:
 Computer Vision / Multimedia / Algebra:
 - [opencv](https://github.com/opencv/opencv)
 - [opencv_contrib](https://github.com/opencv/opencv_contrib)
-- [theora](https://github.com/xiph/theora)
 
 A installation script is provided to easily install all the dependencies on the linux platform. Just run the command below:
  **(Tested only on Ubuntu versions 14.04 and 16.04)**.
@@ -29,3 +28,7 @@ The broker can be easily instantiated with [Docker](https://www.docker.com/) wit
 ```c++
 docker run -d -m 512M -p 15672:15672 -p 5672:5672 picoreti/rabbitmq:latest
 ```
+
+Using the library
+----------------------
+Examples describing how to use the library are provided in the examples folder.

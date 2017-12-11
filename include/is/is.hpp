@@ -7,6 +7,8 @@
 #include <google/protobuf/util/message_differencer.h>
 #include <google/protobuf/util/time_util.h>
 #include <is/msgs/common.pb.h>
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
 #include <boost/asio.hpp>
@@ -89,12 +91,14 @@ inline int set_loglevel(char level) {
 inline std::string make_random_uid() {
   return boost::uuids::to_string(boost::uuids::random_generator()());
 }
+
 inline std::string hostname() {
   return boost::asio::ip::host_name();
 }
 
 // Tag to identify AMQP consumers. The hostname is used because normally container orchestration
 // tools set the container hostname to be its id. The uid part is added to avoid name collisions
+// when running outside a container.
 inline std::string consumer_id() {
   return fmt::format("{}/{}", hostname(), make_random_uid());
 }
@@ -186,95 +190,6 @@ inline boost::optional<T> unpack(rmq::Envelope::ptr_t const& envelope) {
   return unpacked;
 }
 
-// Defer the execution of the function to the end of the scope where this class is instantiated
-struct Defer {
-  const std::function<void()> on_destruction;
-  explicit Defer(std::function<void()>&& defered) noexcept : on_destruction(std::move(defered)) {}
-  Defer(Defer const&) = delete;
-  ~Defer() noexcept { on_destruction(); }
-};
-
-//
-class ServiceProvider {
-  using MethodHandler = std::function<rmq::BasicMessage::ptr_t(rmq::Envelope::ptr_t const&)>;
-  std::unordered_map<std::string, MethodHandler> methods;
-
-  rmq::Channel::ptr_t channel;
-  std::string tag;
-
- public:
-  ServiceProvider() : tag(consumer_id()) {}
-
-  void connect(std::string const& uri) { channel = rmq::Channel::CreateFromUri(uri); }
-  void connect(rmq::Channel::ptr_t const& new_channel) { channel = new_channel; }
-
-  rmq::Channel::ptr_t const& get_channel() const { return channel; }
-  std::string const& get_tag() const { return tag; }
-
-  std::string declare_queue(std::string name, std::string const& id = "",
-                            int queue_size = 64) const {
-    auto exclusive = !id.empty();
-    if (exclusive) name += '.' + id;
-    channel->DeclareExchange("is", "topic");
-    rmq::Table headers{{rmq::TableKey("x-max-length"), rmq::TableValue(queue_size)}};
-    channel->DeclareQueue(name, /*passive*/ false, /*durable*/ false, exclusive,
-                          /*autodelete*/ true, headers);
-    channel->BasicConsume(name, tag, /*nolocal*/ true, /*noack*/ false, exclusive);
-    return name;
-  }
-
-  template <typename Request, typename Reply>
-  void delegate(std::string const& queue, std::string const& name,
-                std::function<Status(Request, Reply*)> method) {
-    std::string binding = queue + '.' + name;
-    channel->BindQueue(queue, "is", binding);
-
-    methods.emplace(binding, [=](rmq::Envelope::ptr_t const& envelope) -> rmq::BasicMessage::ptr_t {
-      boost::optional<Request> request = unpack<Request>(envelope);
-
-      rmq::BasicMessage::ptr_t message;
-      Status status;
-
-      if (request) {
-        Reply reply;
-        status = method(*request, &reply);
-        message = is_protobuf(envelope) ? pack_proto(reply) : pack_json(reply);
-      } else {
-        status = make_status(StatusCode::INTERNAL_ERROR, "Failed to deserialize payload");
-        message = rmq::BasicMessage::Create();
-      }
-
-      std::string packed_status;
-      pb::MessageToJsonString(status, &packed_status);
-      rmq::Table table{{rmq::TableKey("rpc-status"), rmq::TableValue(packed_status)}};
-      message->HeaderTable(table);
-      return message;
-    });
-  }
-
-  void serve(rmq::Envelope::ptr_t const& envelope) const {
-    const Defer ack([&] { channel->BasicAck(envelope); });
-    if (!envelope->Message()->ReplyToIsSet())
-      return;  // User did not specified a reply topic, no point in processing this request
-
-    auto method = methods.find(envelope->RoutingKey());
-    if (method == methods.end()) return;
-
-    auto message = method->second(envelope);
-    if (envelope->Message()->CorrelationIdIsSet())
-      message->CorrelationId(envelope->Message()->CorrelationId());
-
-    channel->BasicPublish("is", envelope->Message()->ReplyTo(), message);
-  }
-
-  void run() const {
-    for (;;) {
-      auto envelope = channel->BasicConsumeMessage(tag);
-      serve(envelope);
-    }
-  }
-};  // class ServiceProvider
-
 inline void subscribe(rmq::Channel::ptr_t const& channel, std::string const& queue,
                       std::string const& topic) {
   channel->BindQueue(queue, "is", topic);
@@ -319,8 +234,9 @@ inline std::string declare_queue(rmq::Channel::ptr_t const& channel, bool exclus
 
 inline void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
                     rmq::BasicMessage::ptr_t const& message) {
-  if (!message->TimestampIsSet())
+  if (!message->TimestampIsSet()) {
     message->Timestamp(pb::TimeUtil::TimestampToMilliseconds(current_time()));
+  }
   channel->BasicPublish("is", topic, message);
 }
 
@@ -378,22 +294,208 @@ inline rmq::Envelope::ptr_t consume_until(rmq::Channel::ptr_t const& channel,
   return consume_for(channel, tag, timestamp - current_time());
 }
 
-po::options_description add_common_options(po::options_description const& others) {
-  po::options_description description("Common");
-  auto&& options = description.add_options();
-  description.add(others);
-
-  options("help", "show available options");
-  options("loglevel", po::value<char>()->default_value('i'),
-          "log level: i[nfo], w[warn], e[error]");
-  return description;
+template <typename T>
+inline void add_header(rmq::BasicMessage::ptr_t const& message, std::string const& key,
+                       T const& value) {
+  auto table = message->HeaderTableIsSet() ? message->HeaderTable() : rmq::Table();
+  table.emplace(rmq::TableKey(key), rmq::TableValue(value));
+  message->HeaderTable(table);
 }
+
+struct Context {
+  rmq::BasicMessage::ptr_t reply;
+  rmq::Envelope::ptr_t request;
+  Status status;
+
+  Context(rmq::Envelope::ptr_t const& envelope) : request(envelope) {}
+
+  void propagate() const {
+    if (request->Message()->CorrelationIdIsSet()) {
+      reply->CorrelationId(request->Message()->CorrelationId());
+    }
+    std::string packed_status;
+    pb::MessageToJsonString(status, &packed_status);
+    add_header(reply, "rpc-status", packed_status);
+  }
+};
+
+class ServiceProvider {
+  using MethodHandler = std::function<void(Context*)>;
+  using Interceptor = std::function<void(Context*)>;
+
+  std::unordered_map<std::string, MethodHandler> methods;
+  rmq::Channel::ptr_t channel;
+  std::string tag;
+
+  std::vector<Interceptor> before;
+  std::vector<Interceptor> after;
+
+  void run_interceptors(std::vector<Interceptor> const& interceptors, Context* context) const {
+    for (auto&& interceptor : interceptors)
+      interceptor(context);
+  }
+
+ public:
+  ServiceProvider() : tag(consumer_id()) {}
+  void connect(std::string const& uri) { channel = rmq::Channel::CreateFromUri(uri); }
+  void connect(rmq::Channel::ptr_t const& new_channel) { channel = new_channel; }
+
+  rmq::Channel::ptr_t const& get_channel() const { return channel; }
+  std::string const& get_tag() const { return tag; }
+
+  std::string declare_queue(std::string name, std::string const& id = "",
+                            int queue_size = 64) const {
+    auto exclusive = !id.empty();
+    if (exclusive) name += '.' + id;
+    channel->DeclareExchange("is", "topic");
+    rmq::Table headers{{rmq::TableKey("x-max-length"), rmq::TableValue(queue_size)}};
+    channel->DeclareQueue(name, /*passive*/ false, /*durable*/ false, exclusive,
+                          /*autodelete*/ true, headers);
+    channel->BasicConsume(name, tag, /*nolocal*/ true, /*noack*/ false, exclusive);
+    return name;
+  }
+
+  // This interceptor will be called before the service implementation
+  void add_interceptor_before(Interceptor&& interceptor) { before.emplace_back(interceptor); }
+  // This interceptor will be called after the service implementation
+  void add_interceptor_after(Interceptor&& interceptor) { after.emplace_back(interceptor); }
+
+  template <typename Request, typename Reply>
+  void delegate(std::string const& queue, std::string const& name,
+                std::function<Status(Request, Reply*)> method) {
+    std::string binding = queue + '.' + name;
+    channel->BindQueue(queue, "is", binding);
+
+    methods.emplace(binding, [=](Context* context) {
+      boost::optional<Request> request = unpack<Request>(context->request);
+      Reply reply;
+
+      if (request) {
+        try {
+          context->status = method(*request, &reply);
+        } catch (std::exception const& e) {
+          auto reason = fmt::format("Service throwed: '{}'", e.what());
+          context->status = make_status(StatusCode::INTERNAL_ERROR, reason);
+        }
+      } else {
+        auto reason =
+            fmt::format("Expected type '{}'", Request{}.GetMetadata().descriptor->full_name());
+        context->status = make_status(StatusCode::FAILED_PRECONDITION, reason);
+      }
+
+      if (context->status.code() == StatusCode::OK) {
+        context->reply = is_protobuf(context->request) ? pack_proto(reply) : pack_json(reply);
+      } else {
+        context->reply = rmq::BasicMessage::Create();
+      }
+
+    });
+  }
+
+  void serve(rmq::Envelope::ptr_t const& envelope) const {
+    Context context(envelope);
+    run_interceptors(before, &context);
+
+    auto method = methods.find(envelope->RoutingKey());
+    if (method != methods.end()) {
+      method->second(&context);
+
+      if (context.request->Message()->ReplyToIsSet()) {
+        context.propagate();
+        publish(channel, context.request->Message()->ReplyTo(), context.reply);
+      }
+    }
+
+    channel->BasicAck(envelope);
+    run_interceptors(after, &context);
+  }
+
+  void run() const {
+    for (;;) {
+      auto envelope = channel->BasicConsumeMessage(tag);
+      serve(envelope);
+    }
+  }
+};
+
+class RPCMetricsInterceptor {
+  prometheus::Exposer exposer;
+  std::shared_ptr<prometheus::Registry> registry;
+
+  prometheus::Family<prometheus::Histogram>& family;
+  std::unordered_map<std::string, prometheus::Histogram*> histograms;
+
+  pb::Timestamp started_at;
+  prometheus::Histogram* histogram;
+
+ public:
+  RPCMetricsInterceptor(ServiceProvider& provider, int port = 8080) : RPCMetricsInterceptor(port) {
+    intercept(provider);
+  }
+
+  RPCMetricsInterceptor(int port = 8080)
+      : exposer(fmt::format("127.0.0.1:{}", port)),
+        registry(std::make_shared<prometheus::Registry>()),
+        family(prometheus::BuildHistogram().Name("rpc_request_duration").Register(*registry)) {
+    exposer.RegisterCollectable(registry);
+  }
+
+  void intercept(ServiceProvider& provider) {
+    provider.add_interceptor_before([this](Context* context) {
+      started_at = current_time();
+      auto topic = context->request->RoutingKey();
+      auto key_value = histograms.find(topic);
+      if (key_value != histograms.end()) {
+        histogram = key_value->second;
+      } else {
+        histogram = &family.Add({{"name", fmt::format("{}", topic)}},
+                                prometheus::Histogram::BucketBoundaries{1.0, 2.5, 5.0, 10.0, 25.0,
+                                                                        50.0, 100.0, 250.0, 500.0});
+        histograms.emplace(topic, histogram);
+      }
+    });
+
+    provider.add_interceptor_after([this](Context* context) {
+      auto took = pb::TimeUtil::DurationToMilliseconds(current_time() - started_at);
+      histogram->Observe(took);
+    });
+  }
+};
+
+class RPCLogInterceptor {
+  pb::Timestamp started_at;
+
+ public:
+  RPCLogInterceptor(ServiceProvider& provider) { intercept(provider); }
+
+  RPCLogInterceptor() = default;
+
+  void intercept(ServiceProvider& provider) {
+    provider.add_interceptor_before([this](Context* context) { started_at = current_time(); });
+
+    provider.add_interceptor_after([this](Context* context) {
+      auto took = pb::TimeUtil::DurationToMilliseconds(current_time() - started_at);
+      info("{};{};{}ms", context->request->RoutingKey(), StatusCode_Name(context->status.code()),
+           took);
+    });
+  }
+};
 
 po::variables_map parse_program_options(int argc, char** argv,
                                         po::options_description const& user_options) {
-  auto description = add_common_options(user_options);
+  auto add_common_options = [](po::options_description const& others) {
+    po::options_description description("Common");
+    auto&& options = description.add_options();
+    description.add(others);
 
-  auto print_help = [&](std::string const& message = "") {
+    options("help", "show available options");
+    options("loglevel", po::value<char>()->default_value('i'),
+            "char indicating the desired log level: i[nfo], w[warn], e[error]");
+    return description;
+  };
+
+  auto print_help = [](po::options_description const& description,
+                       std::string const& message = "") {
     std::cout << message << '\n' << description << std::endl;
     std::exit(0);
   };
@@ -418,6 +520,7 @@ po::variables_map parse_program_options(int argc, char** argv,
     return cropped_to_lower_snake_case(env);
   };
 
+  auto description = add_common_options(user_options);
   po::variables_map vm;
   try {
     po::store(po::parse_command_line(argc, argv, description), vm);
@@ -425,13 +528,13 @@ po::variables_map parse_program_options(int argc, char** argv,
     po::notify(vm);
   } catch (std::exception const& e) {
     auto error = fmt::format("Error parsing program options: {}", e.what());
-    print_help(error);
+    print_help(description, error);
   }
 
-  if (vm.count("help")) print_help();
+  if (vm.count("help")) print_help(description);
 
   if (set_loglevel(vm["loglevel"].as<char>()))
-    print_help(fmt::format("Invalid log level '{}'", vm["loglevel"].as<char>()));
+    print_help(description, fmt::format("Invalid log level '{}'", vm["loglevel"].as<char>()));
 
   return vm;
 }
