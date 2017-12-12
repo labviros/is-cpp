@@ -1,6 +1,6 @@
 #include <SimpleAmqpClient/SimpleAmqpClient.h>  // amqp client library used to connect to the broker
 #include <boost/optional.hpp>                   // value type that can be nullable
-#include "../include/is/is.hpp"                 // utility functions for c++
+#include <is/is.hpp>                            // utility functions for c++
 #include "hello.pb.h"                           // auto generated header of our custom message
 
 using boost::optional;

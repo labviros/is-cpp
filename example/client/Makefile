@@ -1,21 +1,20 @@
 CXX = clang++
-CXXFLAGS += -std=c++14 -Werror -Wall -O2
-DEBUGFLAGS = # -g -fsanitize=address -fno-omit-frame-pointer 
+CXXFLAGS += -std=c++14
 LDFLAGS += -L/usr/local/lib -I/usr/local/include `pkg-config --libs protobuf librabbitmq libSimpleAmqpClient`\
            -Wl,--no-as-needed -Wl,--as-needed -ldl -lboost_system -lboost_chrono -lboost_program_options -lismsgs -lprometheus-cpp
 PROTOC = protoc
 
-LOCAL_PROTOS_PATH = ./msgs/
-
+LOCAL_PROTOS_PATH = ../protos/
 vpath %.proto $(LOCAL_PROTOS_PATH)
 
-all: hello service client
+all: debug
 
-hello: hello.pb.o hello.o 
-	$(CXX) $(DEBUGFLAGS) $^ $(LDFLAGS) -o $@
+debug: CXXFLAGS += -g -Wall
+debug: LDFLAGS += -fsanitize=address -fno-omit-frame-pointer
+debug: client
 
-service: hello.pb.o service.o 
-	$(CXX) $(DEBUGFLAGS) $^ $(LDFLAGS) -o $@
+release: CXXFLAGS += -Wall -Werror -O2
+release: client
 
 client: hello.pb.o client.o 
 	$(CXX) $(DEBUGFLAGS) $^ $(LDFLAGS) -o $@
@@ -25,4 +24,4 @@ client: hello.pb.o client.o
 	$(PROTOC) -I $(LOCAL_PROTOS_PATH) --cpp_out=. $<
 
 clean:
-	rm -f *.o *.pb.cc *.pb.h hello service client
+	rm -f *.o *.pb.cc *.pb.h client

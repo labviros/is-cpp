@@ -1,4 +1,4 @@
-#include "../include/is/is.hpp"
+#include <is/is.hpp>
 #include "hello.pb.h"
 
 using hello::GreeterReply;

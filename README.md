@@ -23,10 +23,10 @@ A installation script is provided to easily install all the dependencies on the 
 curl -fsSL https://raw.githubusercontent.com/labviros/is-cpp/master/install | bash
 ```
 
-Like explained, AMQP 0.9.1 requires a broker. We recommend using [RabbitMQ](https://www.rabbitmq.com/).
+As explained, AMQP 0.9.1 requires a broker to route messages between clients. We recommend using [RabbitMQ](https://www.rabbitmq.com/).
 The broker can be easily instantiated with [Docker](https://www.docker.com/) with the following command:
-```c++
-docker run -d -m 512M -p 15672:15672 -p 5672:5672 picoreti/rabbitmq:latest
+```shell
+docker run -d -m 512M -p 15672:15672 -p 5672:5672 viros/rabbitmq:3
 ```
 
 Using the library

@@ -1,4 +1,4 @@
-#include "../include/is/is.hpp"
+#include <is/is.hpp>
 #include "hello.pb.h"
 
 using hello::GreeterReply;
@@ -16,9 +16,10 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   is::ServiceProvider provider;
+  // enable metrics for our services (http://<ip>:8080/metrics)
   is::RPCMetricsInterceptor metrics(provider);
-  is::RPCLogInterceptor logs(provider);
-  provider.connect(uri);  // Connect to the AMQP broker
+  is::RPCLogInterceptor logs(provider);  // enable logging for our services
+  provider.connect(uri);                 // Connect to the AMQP broker
 
   // Declares a queue with "service_name" on the broker to storage service requests.
   auto tag = provider.declare_queue(service_name);
@@ -36,7 +37,7 @@ int main(int argc, char** argv) {
         return is::make_status(is::StatusCode::OK);
       });
 
-  // If one of the services throw the caller will be notified
+  // If one of the services throw (like this one) the caller (client) will be notified
   provider.delegate<GreeterRequest, GreeterReply>(
       tag, "Throw", [](auto const& request, auto* reply) {
         throw std::runtime_error("My exception message");
@@ -44,5 +45,5 @@ int main(int argc, char** argv) {
       });
 
   is::info("Listening for incoming requests...");
-  provider.run();
+  provider.run();  // blocks forever
 }

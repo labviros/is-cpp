@@ -1,8 +1,10 @@
-FROM picoreti/is-cpp:1
+FROM viros/is-cpp:1
 ARG SERVICE=local
-RUN git clone http://192.168.1.101/labviros/${SERVICE}
+COPY . ${SERVICE}
+COPY hello.proto /protos/
 RUN cd ${SERVICE} && \
-    make service && \
+    make clean && \
+    make release && \
     mkdir lib && \
     for lib in `ldd service | awk 'BEGIN{ORS=" "}$1~/^\//{print $1}$3~/^\//{print $3}' | sed 's/,$/\n/'`; do cp $lib lib/; done 
 
