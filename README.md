@@ -6,12 +6,17 @@ Messages payload are serialized using the protobuf binary format. Protocol buffe
  
 Dependencies
 --------------
-Network / Serialization / Logging: 
+Network / Serialization:
 - [Boost](http://www.boost.org/)
 - [SimpleAmqpClient](https://github.com/alanxz/SimpleAmqpClient)
 - [rabbitmq-c](https://github.com/alanxz/rabbitmq-c)
 - [protobuf](https://github.com/google/protobuf)
+
+Logging / Metrics / Tracing:
 - [spdlog](https://github.com/gabime/spdlog)
+- [prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
+- [opentracing-cpp](https://github.com/opentracing/opentracing-cpp)
+- [zipkin-cpp-opentracing](https://github.com/rnburn/zipkin-cpp-opentracing)
 
 Computer Vision / Multimedia / Algebra:
 - [opencv](https://github.com/opencv/opencv)
@@ -20,13 +25,13 @@ Computer Vision / Multimedia / Algebra:
 A installation script is provided to easily install all the dependencies on the linux platform. Just run the command below:
  **(Tested only on Ubuntu versions 14.04 and 16.04)**.
 ```shell
-curl -fsSL https://raw.githubusercontent.com/labviros/is-cpp/master/install | bash
+$ curl -fsSL https://raw.githubusercontent.com/labviros/is-cpp/master/install | bash
 ```
 
 As explained, AMQP 0.9.1 requires a broker to route messages between clients. We recommend using [RabbitMQ](https://www.rabbitmq.com/).
 The broker can be easily instantiated with [Docker](https://www.docker.com/) with the following command:
 ```shell
-docker run -d -m 512M -p 15672:15672 -p 5672:5672 viros/rabbitmq:3
+$ docker run -d -m 512M -p 15672:15672 -p 5672:5672 viros/rabbitmq:3
 ```
 
 Using the library

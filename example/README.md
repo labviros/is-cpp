@@ -56,5 +56,5 @@ $ make
 
 Running:
 ```shell
-$ ./client -u amqp://localhost:5672 -e Hello.Greeter
+$ ./client -u amqp://localhost:5672 -e Greeter.Hello
 ``` 
