@@ -11,6 +11,7 @@
 #include <prometheus/registry.h>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
+#include <zipkin/opentracing.h>
 #include <boost/asio.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -111,6 +112,65 @@ inline pb::Timestamp current_time() {
   timestamp.set_nanos(nanos % 1000000000);
   return timestamp;
 }
+
+namespace ot = opentracing;
+namespace zk = zipkin;
+
+class AmqpCarrier : public ot::TextMapReader, public ot::TextMapWriter {
+ public:
+  AmqpCarrier(is::rmq::Table& h) : headers(h) {}
+
+  ot::expected<void> Set(ot::string_view key, ot::string_view value) const override {
+    headers[static_cast<std::string>(key)] = static_cast<std::string>(value);
+    return {};
+  }
+
+  ot::expected<void> ForeachKey(
+      std::function<ot::expected<void>(ot::string_view key, ot::string_view value)> f)
+      const override {
+    for (const auto& key_value : headers) {
+      if (key_value.first[0] == 'x') {
+        auto result = f(key_value.first, key_value.second.GetString());
+        if (!result) return result;
+      }
+    }
+    return {};
+  }
+
+ private:
+  is::rmq::Table& headers;
+};
+
+class Tracer {
+  std::shared_ptr<ot::Tracer> tracer;
+
+ public:
+  Tracer(std::string const& name, std::string const& host = "localhost", uint32_t port = 9411) {
+    zk::ZipkinOtTracerOptions options;
+    options.collector_host = host;
+    options.collector_port = port;
+    options.service_name = name;
+    tracer = zk::makeZipkinOtTracer(options);
+  }
+  Tracer(Tracer const&) = default;
+  ~Tracer() { tracer->Close(); }
+
+  void inject(rmq::BasicMessage::ptr_t const& message, ot::SpanContext const& context) {
+    auto headers = message->HeaderTable();
+    auto carrier = AmqpCarrier{headers};
+    tracer->Inject(context, carrier);
+    message->HeaderTable(headers);
+  }
+
+  std::unique_ptr<ot::Span> extract(rmq::Envelope::ptr_t const& envelope, std::string const& name) {
+    auto headers = envelope->Message()->HeaderTable();
+    auto carrier = AmqpCarrier(headers);
+    auto maybe_span = tracer->Extract(carrier);
+    return tracer->StartSpan(name, {ot::ChildOf(maybe_span->get())});
+  }
+
+  std::unique_ptr<ot::Span> new_span(std::string const& name) { return tracer->StartSpan(name); }
+};
 
 inline Status make_status(StatusCode code, std::string const& why = "") {
   Status status;
@@ -412,8 +472,7 @@ class ServiceProvider {
 
   void run() const {
     for (;;) {
-      auto envelope = channel->BasicConsumeMessage(tag);
-      serve(envelope);
+      serve(consume(channel, tag));
     }
   }
 };
@@ -477,6 +536,27 @@ class RPCLogInterceptor {
       auto took = pb::TimeUtil::DurationToMilliseconds(current_time() - started_at);
       info("{};{};{}ms", context->request->RoutingKey(), StatusCode_Name(context->status.code()),
            took);
+    });
+  }
+};
+
+class RPCTraceInterceptor {
+  Tracer tracer;
+  std::unique_ptr<ot::Span> span;
+
+ public:
+  RPCTraceInterceptor(ServiceProvider& provider, Tracer const& tracer) : tracer(tracer) {
+    intercept(provider);
+  }
+
+  void intercept(ServiceProvider& provider) {
+    provider.add_interceptor_before([this](Context* context) {
+      span = tracer.extract(context->request, context->request->RoutingKey());
+    });
+
+    provider.add_interceptor_after([this](Context* context) {
+      tracer.inject(context->reply, span->context());
+      span->Finish();
     });
   }
 };
@@ -560,7 +640,6 @@ inline boost::optional<T> load_from_json(std::string const& filename) {
   return is::pb::JsonStringToMessage(buffer, &message).ok() ? boost::optional<T>(message)
                                                             : boost::none;
 }
-
 }  // namespace is
 
 #endif  // __IS_HPP__

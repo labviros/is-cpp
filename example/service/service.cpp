@@ -16,10 +16,10 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   is::ServiceProvider provider;
-  // enable metrics for our services (http://<ip>:8080/metrics)
-  is::RPCMetricsInterceptor metrics(provider);
-  is::RPCLogInterceptor logs(provider);  // enable logging for our services
-  provider.connect(uri);                 // Connect to the AMQP broker
+  is::RPCMetricsInterceptor metrics(provider);  // enable metrics for our services
+                                                // (http://<ip>:8080/metrics)
+  is::RPCLogInterceptor logs(provider);         // enable logging for our services
+  provider.connect(uri);                        // Connect to the AMQP broker
 
   // Declares a queue with "service_name" on the broker to storage service requests.
   auto tag = provider.declare_queue(service_name);
