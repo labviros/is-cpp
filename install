@@ -49,8 +49,8 @@ function import::git {
 		git clone $1
 	fi
 	cd $(basename $1)
-  git submodule update --init > /dev/null
-	echo -n $(basename $1)
+	git submodule update --init > /dev/null
+	echo -n `pwd` 
 }
 
 function install::cmake {
