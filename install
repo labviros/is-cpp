@@ -81,7 +81,7 @@ function install::header_only {
 
 function install::boost {
 	wget https://sourceforge.net/projects/boost/files/boost/1.63.0/boost_1_63_0.tar.gz
-	tar -xvf boost_1_63_0.tar.gz
+	tar -xf boost_1_63_0.tar.gz
 	rm boost_1_63_0.tar.gz
 	cd boost_1_63_0/
 	./bootstrap.sh
@@ -90,10 +90,22 @@ function install::boost {
 	ldconfig
 }
 
+function import::wget::tarxz {
+	cd $INSTALL_PATH
+	filename=$(basename $1)
+	if [ ! -d $filename ]; then
+		wget $1
+	fi
+	tar -xf $filename
+	rm $filename
+	cd ${filename%.tar.xz}
+	echo -n `pwd`
+}
+
 apt-get update && apt-get install -y \
 	build-essential unzip wget curl cmake clang clang-tidy git pkg-config autoconf libtool \
 	libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
-	libssl-dev libpgm-dev libarmadillo-dev libopenblas-dev liblapack-dev liblapacke-dev \
+	libssl-dev libpgm-dev libopenblas-dev liblapack-dev liblapacke-dev \
 	libvorbis-dev libudev-dev libjpeg-dev libopenal-dev libcurl3-dev libcurlpp-dev
 
 if ! find::boost 1.63; then
@@ -124,6 +136,10 @@ if ! find::pkg opencv; then
 		-D BUILD_opencv_dpm=OFF -D BUILD_opencv_face=ON
 fi
 
+if ! find::pkg armadillo; then
+	import::wget::tarxz https://sourceforge.net/projects/arma/files/armadillo-8.300.3.tar.xz | install::cmake
+fi
+
 if ! find::folder /usr/local/include/spdlog; then
 	import::git ${GIT_URL}/labviros/spdlog | install::header_only
 fi
@@ -140,7 +156,7 @@ if ! find::folder /usr/local/include/zipkin; then
 	import::git ${GIT_URL}/labviros/zipkin-cpp-opentracing | install::cmake
 fi
 
-import::git ${GIT_URL}/labviros/is-cpp2 | install::cmake
+import::git ${GIT_URL}/labviros/is-cpp | install::cmake
 import::git ${GIT_URL}/labviros/is-msgs | install::cmake
 
 ldconfig
