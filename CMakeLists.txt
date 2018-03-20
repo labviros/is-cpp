@@ -11,11 +11,13 @@ find_package(Protobuf REQUIRED)
 find_package(Boost COMPONENTS program_options system REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(ismsgs REQUIRED)
+find_package(prometheus-cpp REQUIRED)
 
 add_library(is 
   is/core.cpp 
   is/rpc/service-provider.cpp
   is/rpc/interceptors/log-interceptor.cpp
+  is/rpc/interceptors/metrics-interceptor.cpp
 )
 
 target_compile_features(is PUBLIC cxx_auto_type)
@@ -24,6 +26,7 @@ target_link_libraries(
   is 
  PUBLIC
   ismsgs::ismsgs
+  prometheus-cpp::prometheus-cpp
   ${RmqC_LIBRARIES} 
   ${RmqCpp_LIBRARIES} 
   ${Protobuf_LIBRARIES} 
@@ -66,3 +69,12 @@ install(
 
 # # register project in CMake user registry
 export(PACKAGE ${PROJECT_NAME})
+
+option(build_examples "build examples" true)
+
+if(build_examples)
+  add_subdirectory(example/protos)
+  add_subdirectory(example/helloworld)
+  add_subdirectory(example/service)
+  add_subdirectory(example/client)
+endif()

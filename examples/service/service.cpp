@@ -1,10 +1,13 @@
-#include <is/is.hpp>
+#include <is/core.hpp>
+#include <is/rpc.hpp>
+#include <is/rpc/interceptors/log-interceptor.hpp>
+#include <is/rpc/interceptors/metrics-interceptor.hpp>
 #include "hello.pb.h"
 
-using hello::GreeterReply;
-using hello::GreeterRequest;
-
 int main(int argc, char** argv) {
+  using hello::GreeterReply;
+  using hello::GreeterRequest;
+
   std::string uri, service_name;
 
   // Define our parser to read command line arguments
@@ -16,10 +19,9 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   is::ServiceProvider provider;
-  is::RPCMetricsInterceptor metrics(provider);  // enable metrics for our services
-                                                // (http://<ip>:8080/metrics)
-  is::RPCLogInterceptor logs(provider);         // enable logging for our services
-  provider.connect(uri);                        // Connect to the AMQP broker
+  provider.add_interceptor<is::LogInterceptor>();      // enable logging for our services
+  provider.add_interceptor<is::MetricsInterceptor>();  // enable metrics for our services
+  provider.connect(uri);                               // Connect to the AMQP broker
 
   // Declares a queue with "service_name" on the broker to storage service requests.
   auto tag = provider.declare_queue(service_name);
@@ -32,7 +34,6 @@ int main(int argc, char** argv) {
           return is::make_status(is::StatusCode::INVALID_ARGUMENT, "Name can't be empty");
         // Fill our reply
         *reply->mutable_greeting() = fmt::format("Hello {}, how are you ? :)", request.name());
-
         // Signal that everything was fine with the request
         return is::make_status(is::StatusCode::OK);
       });

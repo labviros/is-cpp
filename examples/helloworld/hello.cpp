@@ -1,10 +1,5 @@
-#include <SimpleAmqpClient/SimpleAmqpClient.h>  // amqp client library used to connect to the broker
-#include <boost/optional.hpp>                   // value type that can be nullable
-#include <is/is.hpp>                            // utility functions for c++
-#include "hello.pb.h"                           // auto generated header of our custom message
-
-using boost::optional;
-using hello::Hello;
+#include <is/core.hpp>
+#include "hello.pb.h"  // auto generated header of our custom message
 
 /* @Simple Publisher/Consumer. This example describes how to:
   - Read input from command line arguments;
@@ -18,6 +13,7 @@ using hello::Hello;
   $ IS_URI=amqp://localhost:5672 ./hello
 */
 int main(int argc, char** argv) {
+  using hello::Hello;
   std::string uri;
 
   // Define our parser to read command line arguments
@@ -26,7 +22,7 @@ int main(int argc, char** argv) {
   is::parse_program_options(argc, argv, opts);
 
   // Connect to the AMQP broker
-  is::rmq::Channel::ptr_t channel = is::rmq::Channel::CreateFromUri(uri);
+  is::rmq::Channel::ptr_t channel = is::make_channel(uri);
   is::info("Connected to broker...");
 
   // Declares a queue on the broker to storage messages "that we are interested".
@@ -36,7 +32,7 @@ int main(int argc, char** argv) {
   is::subscribe(channel, tag, "got.weather");
 
   // Instantiated a Hello message that we defined in msgs/hello.proto
-  Hello hello;
+  hello::Hello hello;
   // Fill the message...
   hello.set_text("Winter is coming...");
   hello.set_n(666);
@@ -52,11 +48,11 @@ int main(int argc, char** argv) {
 
   // Consume one message from our queue. (Blocks forever)
   is::rmq::Envelope::ptr_t envelope = is::consume(channel, tag);
-  is::info(R"(New message on topic="{}")", envelope->RoutingKey());
+  is::info("New message on topic='{}'", envelope->RoutingKey());
 
   // Tries to deserialize message, this can fail if the content of the message does not match the
   // object we are trying to deserialize.
-  optional<Hello> maybe_hello = is::unpack<Hello>(envelope);
+  boost::optional<Hello> maybe_hello = is::unpack<Hello>(envelope);
   if (maybe_hello) {
     // Deserialization was successful, print the message we received
     is::info("{}", *maybe_hello);  // Protobuf messages can be passed directly to log functions

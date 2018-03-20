@@ -1,10 +1,11 @@
-#include <is/is.hpp>
+#include <is/core.hpp>
+#include <is/rpc.hpp>
 #include "hello.pb.h"
 
-using hello::GreeterReply;
-using hello::GreeterRequest;
-
 int main(int argc, char** argv) {
+  using hello::GreeterReply;
+  using hello::GreeterRequest;
+
   std::string uri, endpoint;
 
   // Define our parser to read command line arguments
@@ -15,7 +16,7 @@ int main(int argc, char** argv) {
           "service endpoint");
   is::parse_program_options(argc, argv, opts);
 
-  auto channel = is::rmq::Channel::CreateFromUri(uri);
+  auto channel = is::make_channel(uri);
   auto tag = is::declare_queue(channel);
 
   GreeterRequest request;

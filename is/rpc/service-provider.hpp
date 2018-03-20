@@ -30,9 +30,9 @@ class ServiceProvider {
   std::string const& get_tag() const { return tag; }
 
   // Setup interceptor to customize the behaviour of this class
-  template <typename T>
-  void add_interceptor(T&& interceptor) {
-    interceptors.push_back(std::unique_ptr<T>(new T(std::move(interceptor))));
+  template <typename T, typename... Args>
+  void add_interceptor(Args&&... args) {
+    interceptors.push_back(std::unique_ptr<T>(new T(std::forward<Args>(args)...)));
   }
 
   std::string declare_queue(std::string name, std::string const& id = "",
