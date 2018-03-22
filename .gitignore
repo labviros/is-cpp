@@ -1,5 +1,2 @@
-*.pb.h
-*.pb.cc
-*.o
-.vscode/*
+.vscode/
 build/

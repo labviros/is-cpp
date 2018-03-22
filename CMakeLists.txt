@@ -1,10 +1,18 @@
 cmake_minimum_required(VERSION 3.0)
 project(is VERSION 0.0.1 LANGUAGES CXX)
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+set(CMAKE_CXX_FLAGS "-Wall -Wextra")
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
 include(GNUInstallDirs)
-include(CMakeDependentOption)
 
 find_package(PkgConfig REQUIRED)
+set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH true)
 pkg_check_modules(RmqC REQUIRED librabbitmq)
 pkg_check_modules(RmqCpp REQUIRED libSimpleAmqpClient)
 find_package(Protobuf REQUIRED)
@@ -21,7 +29,6 @@ add_library(is
 )
 
 target_compile_features(is PUBLIC cxx_auto_type)
-
 target_link_libraries(
   is 
  PUBLIC
@@ -29,7 +36,7 @@ target_link_libraries(
   prometheus-cpp::prometheus-cpp
   ${RmqC_LIBRARIES} 
   ${RmqCpp_LIBRARIES} 
-  ${Protobuf_LIBRARIES} 
+  ${PROTOBUF_LIBRARIES} 
   ${Boost_LIBRARIES} 
 )
 
@@ -40,7 +47,7 @@ target_include_directories(
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
   ${RmqC_INCLUDE_DIRS} 
   ${RmqCpp_INCLUDE_DIRS} 
-  ${Protobuf_INCLUDE_DIRS} 
+  ${PROTOBUF_INCLUDE_DIRS} 
   ${Boost_INCLUDE_DIRS} 
 ) 
 
@@ -69,12 +76,3 @@ install(
 
 # # register project in CMake user registry
 export(PACKAGE ${PROJECT_NAME})
-
-option(build_examples "build examples" true)
-
-if(build_examples)
-  add_subdirectory(example/protos)
-  add_subdirectory(example/helloworld)
-  add_subdirectory(example/service)
-  add_subdirectory(example/client)
-endif()
