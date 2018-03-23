@@ -11,10 +11,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 include(GNUInstallDirs)
 
-find_package(PkgConfig REQUIRED)
-set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH true)
-pkg_check_modules(RmqC REQUIRED librabbitmq)
-pkg_check_modules(RmqCpp REQUIRED libSimpleAmqpClient)
+find_library(rabbitmq_LIBRARIES NAMES rabbitmq)
+find_library(SimpleAmqpClient_LIBRARIES NAMES SimpleAmqpClient)
+find_path(SimpleAmqpClient_INCLUDE_DIRS NAMES SimpleAmqpClient)
 find_package(Protobuf REQUIRED)
 find_package(Boost COMPONENTS program_options system REQUIRED)
 find_package(spdlog REQUIRED)
@@ -28,16 +27,18 @@ add_library(is
   is/rpc/interceptors/metrics-interceptor.cpp
 )
 
-target_compile_features(is PUBLIC cxx_auto_type)
+set_property(TARGET is PROPERTY CXX_STANDARD 11)
+
 target_link_libraries(
   is 
  PUBLIC
-  ismsgs::ismsgs
-  prometheus-cpp::prometheus-cpp
-  ${RmqC_LIBRARIES} 
-  ${RmqCpp_LIBRARIES} 
+  ${rabbitmq_LIBRARIES} 
+  ${SimpleAmqpClient_LIBRARIES} 
   ${PROTOBUF_LIBRARIES} 
   ${Boost_LIBRARIES} 
+ PRIVATE
+  ismsgs::ismsgs
+  prometheus-cpp::prometheus-cpp
 )
 
 target_include_directories(
@@ -45,8 +46,7 @@ target_include_directories(
  PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/is>"
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-  ${RmqC_INCLUDE_DIRS} 
-  ${RmqCpp_INCLUDE_DIRS} 
+  ${SimpleAmqpClient_INCLUDE_DIRS} 
   ${PROTOBUF_INCLUDE_DIRS} 
   ${Boost_INCLUDE_DIRS} 
 ) 
