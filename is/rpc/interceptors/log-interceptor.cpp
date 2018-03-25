@@ -13,7 +13,7 @@ LogInterceptor::LogInterceptor(char level) {
     logger->set_level(spdlog::level::err);
 }
 
-void LogInterceptor::before_call(Context* context) {
+void LogInterceptor::before_call(Context*) {
   started_at = current_time();
 }
 

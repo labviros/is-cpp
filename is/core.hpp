@@ -125,6 +125,10 @@ rmq::BasicMessage::ptr_t prepare_request(std::string const& queue, pb::Message c
 std::string request(rmq::Channel::ptr_t const& channel, std::string const& queue,
                     std::string const& endpoint, pb::Message const& proto);
 
+void set_deadline(rmq::BasicMessage::ptr_t const& request, pb::Timestamp const& deadline);
+
+boost::optional<pb::Timestamp> get_deadline(rmq::Envelope::ptr_t const& reply);
+
 rmq::Envelope::ptr_t consume(rmq::Channel::ptr_t const& channel);
 
 rmq::Envelope::ptr_t consume_for(rmq::Channel::ptr_t const& channel, pb::Duration const& duration);
@@ -164,7 +168,7 @@ namespace is {
 template <typename T>
 void add_header(rmq::BasicMessage::ptr_t const& message, std::string const& key, T const& value) {
   auto table = message->HeaderTableIsSet() ? message->HeaderTable() : rmq::Table();
-  table.emplace(rmq::TableKey(key), rmq::TableValue(value));
+  table[rmq::TableKey(key)] = rmq::TableValue(value);
   message->HeaderTable(table);
 }
 

@@ -34,10 +34,19 @@ void ServiceProvider::serve(rmq::Envelope::ptr_t const& envelope) const {
   auto method = methods.find(envelope->RoutingKey());
   if (method != methods.end()) {
     Context context(envelope);
-    for(auto&& interceptor : interceptors) interceptor->before_call(&context); 
-    method->second(&context);
-    for(auto&& interceptor : interceptors) interceptor->after_call(&context); 
-    publish(channel, context.reply_topic(), context.reply());
+    for (auto&& interceptor : interceptors) {
+      interceptor->before_call(&context);
+    }
+
+    if (!context.deadline_exceeded()) { method->second(&context); }
+
+    auto exceeded = context.deadline_exceeded();
+
+    for (auto&& interceptor : interceptors) {
+      interceptor->after_call(&context);
+    }
+
+    if (!exceeded) { publish(channel, context.reply_topic(), context.reply()); }
   }
 
   channel->BasicAck(envelope);

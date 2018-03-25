@@ -27,6 +27,13 @@ class Context {
                                           : fmt::format("{}/reply", topic());
   }
 
+  bool deadline_exceeded() {
+    auto deadline = get_deadline(req);
+    auto exceeded = deadline && current_time() >= *deadline;
+    if (exceeded) stat.set_code(StatusCode::DEADLINE_EXCEEDED);
+    return exceeded;
+  }
+
   void set_reply(rmq::BasicMessage::ptr_t const& reply, Status const& status) {
     rep = reply;
     stat = status;

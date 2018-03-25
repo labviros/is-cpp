@@ -90,6 +90,19 @@ void publish(rmq::Channel::ptr_t const& channel, std::string const& topic,
   publish(channel, topic, pack_proto(proto));
 }
 
+void set_deadline(rmq::BasicMessage::ptr_t const& request, pb::Timestamp const& deadline) {
+  add_header(request, "deadline", deadline.SerializeAsString());
+}
+
+boost::optional<pb::Timestamp> get_deadline(rmq::Envelope::ptr_t const& reply) {
+  auto headers = reply->Message()->HeaderTable();
+  auto header = headers.find("deadline") ;
+  if (header == headers.end()) return boost::none;
+  pb::Timestamp deadline;
+  deadline.ParseFromString(header->second.GetString());
+  return deadline;
+}
+
 rmq::BasicMessage::ptr_t prepare_request(std::string const& queue, pb::Message const& proto) {
   auto message = is::pack_proto(proto);
   message->ReplyTo(queue);
