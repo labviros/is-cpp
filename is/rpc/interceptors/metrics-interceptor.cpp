@@ -2,8 +2,8 @@
 
 namespace is {
 
-MetricsInterceptor::MetricsInterceptor(int port)
-    : exposer(fmt::format("127.0.0.1:{}", port)),
+MetricsInterceptor::MetricsInterceptor(std::string const& bind_address)
+    : exposer(bind_address),
       registry(std::make_shared<prometheus::Registry>()) {
   histogram_family = &prometheus::BuildHistogram().Name("rpc_duration_ms").Register(*registry);
 

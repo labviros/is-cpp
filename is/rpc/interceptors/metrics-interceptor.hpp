@@ -20,7 +20,7 @@ class MetricsInterceptor : public Interceptor {
   prometheus::Family<prometheus::Histogram>* histogram_family;
 
  public:
-  MetricsInterceptor(int port = 8080);
+  MetricsInterceptor(std::string const& bind_address = "8080");
   void before_call(Context* context) override;
   void after_call(Context* context) override;
 };
