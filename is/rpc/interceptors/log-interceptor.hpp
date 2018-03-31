@@ -1,19 +1,21 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
 #include "../../core.hpp"
 #include "../interceptor.hpp"
 #include "../service-provider.hpp"
-#include <spdlog/spdlog.h>
 
 namespace is {
 
-class LogInterceptor : public Interceptor {
+class LogInterceptor : public InterceptorConcept {
   pb::Timestamp started_at;
   std::shared_ptr<spdlog::logger> logger;
+
  public:
   LogInterceptor(char level = 'i');
-  void before_call(Context* context) override;
-  void after_call(Context* context) override;
+  InterceptorConcept* copy() const;
+  void before_call(Context* context);
+  void after_call(Context* context);
 };  // LogInterceptor
 
 }  // namespace is

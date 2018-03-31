@@ -18,7 +18,7 @@ class ServiceProvider {
 
   rmq::Channel::ptr_t channel;
   std::unordered_map<std::string, MethodHandler> methods;
-  std::vector<std::unique_ptr<Interceptor>> interceptors;
+  std::vector<Interceptor> interceptors;
   std::string tag;
 
  public:
@@ -30,10 +30,7 @@ class ServiceProvider {
   std::string const& get_tag() const { return tag; }
 
   // Setup interceptor to customize the behaviour of this class
-  template <typename T, typename... Args>
-  void add_interceptor(Args&&... args) {
-    interceptors.push_back(std::unique_ptr<T>(new T(std::forward<Args>(args)...)));
-  }
+  void add_interceptor(Interceptor const& interceptor);
 
   std::string declare_queue(std::string name, std::string const& id = "",
                             int queue_size = 64) const;

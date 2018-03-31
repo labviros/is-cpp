@@ -30,12 +30,16 @@ std::string ServiceProvider::declare_queue(std::string name, std::string const& 
   return name;
 }
 
+void ServiceProvider::add_interceptor(Interceptor const& interceptor) {
+  interceptors.push_back(interceptor);
+}
+
 void ServiceProvider::serve(rmq::Envelope::ptr_t const& envelope) const {
   auto method = methods.find(envelope->RoutingKey());
   if (method != methods.end()) {
     Context context(envelope);
     for (auto&& interceptor : interceptors) {
-      interceptor->before_call(&context);
+      before_call(interceptor, &context);
     }
 
     if (!context.deadline_exceeded()) { method->second(&context); }
@@ -43,7 +47,7 @@ void ServiceProvider::serve(rmq::Envelope::ptr_t const& envelope) const {
     auto exceeded = context.deadline_exceeded();
 
     for (auto&& interceptor : interceptors) {
-      interceptor->after_call(&context);
+      after_call(interceptor, &context);
     }
 
     if (!exceeded) { publish(channel, context.reply_topic(), context.reply()); }

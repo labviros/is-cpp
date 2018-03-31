@@ -13,6 +13,10 @@ LogInterceptor::LogInterceptor(char level) {
     logger->set_level(spdlog::level::err);
 }
 
+InterceptorConcept* LogInterceptor::copy() const {
+  return new LogInterceptor(*this);
+}
+
 void LogInterceptor::before_call(Context*) {
   started_at = current_time();
 }
@@ -24,6 +28,8 @@ void LogInterceptor::after_call(Context* context) {
 
   if (context->status().code() == StatusCode::OK) {
     logger->info("{};{}ms;{}", service, took, code);
+  } else if (context->status().code() == StatusCode::INTERNAL_ERROR) {
+    logger->error("{};{}ms;{};'{}'", service, took, code, context->status().why());
   } else {
     logger->warn("{};{}ms;{};'{}'", service, took, code, context->status().why());
   }
