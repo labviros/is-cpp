@@ -12,10 +12,15 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include(GNUInstallDirs)
 
 find_library(rabbitmq_LIBRARIES NAMES rabbitmq)
+find_path(rabbitmq_INCLUDE_DIRS NAMES amqp.h)
+message("!! Rabbitmq LIBS=${rabbitmq_LIBRARIES}")
+
 find_library(SimpleAmqpClient_LIBRARIES NAMES SimpleAmqpClient)
 find_path(SimpleAmqpClient_INCLUDE_DIRS NAMES SimpleAmqpClient)
+message("!! SimpleAmqpClient LIBS=${SimpleAmqpClient_LIBRARIES}")
+
 find_package(Protobuf REQUIRED)
-find_package(Boost COMPONENTS program_options system REQUIRED)
+find_package(Boost COMPONENTS chrono program_options system REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(ismsgs REQUIRED)
 find_package(prometheus-cpp REQUIRED)
@@ -32,13 +37,12 @@ set_property(TARGET is PROPERTY CXX_STANDARD 11)
 target_link_libraries(
   is 
  PUBLIC
-  ${rabbitmq_LIBRARIES} 
   ${SimpleAmqpClient_LIBRARIES} 
-  ${PROTOBUF_LIBRARIES} 
+  ${rabbitmq_LIBRARIES} 
   ${Boost_LIBRARIES} 
- PRIVATE
   ismsgs::ismsgs
   prometheus-cpp::prometheus-cpp
+  ${PROTOBUF_LIBRARIES} 
 )
 
 target_include_directories(
@@ -49,6 +53,7 @@ target_include_directories(
   ${SimpleAmqpClient_INCLUDE_DIRS} 
   ${PROTOBUF_INCLUDE_DIRS} 
   ${Boost_INCLUDE_DIRS} 
+  ${rabbitmq_INCLUDE_DIRS}
 ) 
 
 install(
