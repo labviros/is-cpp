@@ -20,16 +20,21 @@ namespace is {
 */
 
 class MetricsInterceptor : public InterceptorConcept {
-  std::shared_ptr<prometheus::Registry> registry;
-
-  std::array<prometheus::Counter*, common::StatusCode_ARRAYSIZE> code_counters;
+  struct ServiceMetrics {
+    prometheus::Counter* duration;
+    prometheus::Counter* req;
+    prometheus::Counter* ok;
+    prometheus::Counter* de;
+  };
 
   pb::Timestamp started_at;
-  prometheus::Histogram* latency_histogram;
-  std::unordered_map<std::string, prometheus::Histogram*> latency_histograms;
+  std::unordered_map<std::string, ServiceMetrics> service_metrics;
 
-  prometheus::Family<prometheus::Histogram>* latency_family;
-  prometheus::Histogram::BucketBoundaries boundaries;
+  std::shared_ptr<prometheus::Registry> registry;
+  prometheus::Family<prometheus::Counter>* duration_family;
+  prometheus::Family<prometheus::Counter>* req_family;
+  prometheus::Family<prometheus::Counter>* ok_family;
+  prometheus::Family<prometheus::Counter>* de_family;
 
  public:
   MetricsInterceptor(std::shared_ptr<prometheus::Registry> const& registry);
@@ -37,13 +42,6 @@ class MetricsInterceptor : public InterceptorConcept {
 
   void before_call(Context* context);
   void after_call(Context* context);
-
-  // set exponential latency boundaries
-  void set_latency_boundaries(int n_buckets, double scale, double growth_factor);
-
- private:
-  void setup_code_counters();
-  void setup_latency_histograms();
 };
 
 }  // namespace is

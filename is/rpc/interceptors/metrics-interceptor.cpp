@@ -2,56 +2,65 @@
 
 namespace is {
 
-void MetricsInterceptor::setup_latency_histograms() {
-  auto name = "rpc_duration_ms";
-  latency_family = &prometheus::BuildHistogram().Name(name).Register(*registry);
-}
-
-void MetricsInterceptor::setup_code_counters() {
-  for (int i = 0; i < common::StatusCode_ARRAYSIZE; ++i) {
-    auto code = common::StatusCode_Name(StatusCode(i));
-    std::transform(code.begin(), code.end(), code.begin(), ::tolower);
-    auto metric = fmt::format("code_{}_total", code);
-    auto* family = &prometheus::BuildCounter().Name(metric).Register(*registry);
-    code_counters[i] = &(family->Add({}));
-  }
-}
-
 MetricsInterceptor::MetricsInterceptor(std::shared_ptr<prometheus::Registry> const& reg)
     : registry(reg) {
-  setup_latency_histograms();
-  setup_code_counters();
-  set_latency_boundaries(5, 10, 0.7);
+  duration_family = &prometheus::BuildCounter()
+                         .Name("duration_total")
+                         .Help("Sum of request duration in milliseconds")
+                         .Register(*registry);
+
+  req_family = &prometheus::BuildCounter()
+                    .Name("requests_total")
+                    .Help("Number of requests processed")
+                    .Register(*registry);
+
+  ok_family = &prometheus::BuildCounter()
+                   .Name("ok_total")
+                   .Help("Number of OK responses")
+                   .Register(*registry);
+
+  de_family = &prometheus::BuildCounter()
+                   .Name("de_total")
+                   .Help("Number of DEADLINE_EXCEEDED responses")
+                   .Register(*registry);
 }
 
 InterceptorConcept* MetricsInterceptor::copy() const {
   return new MetricsInterceptor(*this);
 }
 
-void MetricsInterceptor::set_latency_boundaries(int n_buckets, double scale, double growth_factor) {
-  std::vector<double> distribution(n_buckets);
-  for (int n = 0; n < n_buckets; ++n) {
-    distribution[n] = scale * std::exp(n * growth_factor);
-  }
-  boundaries = prometheus::Histogram::BucketBoundaries{distribution};
-}
-
-void MetricsInterceptor::before_call(Context* context) {
+void MetricsInterceptor::before_call(Context*) {
   started_at = current_time();
-  auto topic = context->topic();
-  auto key_value = latency_histograms.find(topic);
-  if (key_value != latency_histograms.end()) {
-    latency_histogram = key_value->second;
-  } else {
-    latency_histogram = &latency_family->Add({{"service", fmt::format("{}", topic)}}, boundaries);
-    latency_histograms.emplace(topic, latency_histogram);
-  }
 }
 
 void MetricsInterceptor::after_call(Context* context) {
-  auto took = pb::TimeUtil::DurationToMilliseconds(current_time() - started_at);
-  latency_histogram->Observe(took);
-  code_counters[context->status().code()]->Increment();
+  auto duration = pb::TimeUtil::DurationToMilliseconds(current_time() - started_at);
+
+  auto topic = context->topic();
+  auto key_value = service_metrics.find(topic);
+
+  if (key_value == service_metrics.end()) {
+    ServiceMetrics metrics;
+    metrics.duration = &duration_family->Add({{"service", fmt::format("{}", topic)}});
+    metrics.req = &req_family->Add({{"service", fmt::format("{}", topic)}});
+    metrics.ok = &ok_family->Add({{"service", fmt::format("{}", topic)}});
+    metrics.de = &de_family->Add({{"service", fmt::format("{}", topic)}});
+    auto iter_and_ok = service_metrics.emplace(topic, metrics);
+    if (!iter_and_ok.second) {
+      is::error("Failed to insert metric into map");
+      return;
+    }
+    key_value = iter_and_ok.first;
+  }
+
+  auto metrics = key_value->second;
+  metrics.duration->Increment(duration);
+  metrics.req->Increment();
+  if (context->status().code() == StatusCode::OK) {
+    metrics.ok->Increment();
+  } else if (context->status().code() == StatusCode::DEADLINE_EXCEEDED) {
+    metrics.de->Increment();
+  }
 }
 
 }  // namespace is
