@@ -2,13 +2,6 @@
 
 namespace is {
 
-Status make_status(StatusCode code, std::string const& why) {
-  Status status;
-  status.set_code(code);
-  status.set_why(why);
-  return status;
-}
-
 Status rpc_status(rmq::Envelope::ptr_t const& envelope) {
   if (envelope != nullptr && envelope->Message()->HeaderTableIsSet()) {
     Status status;

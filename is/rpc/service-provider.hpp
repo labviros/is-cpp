@@ -10,7 +10,6 @@ namespace is {
 using common::Status;
 using common::StatusCode;
 
-Status make_status(StatusCode code, std::string const& why = "");
 Status rpc_status(rmq::Envelope::ptr_t const& envelope);
 
 class ServiceProvider {

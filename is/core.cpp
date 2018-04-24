@@ -14,15 +14,6 @@ std::string consumer_id() {
   return fmt::format("{}/{}", hostname(), make_random_uid());
 }
 
-pb::Timestamp current_time() {
-  const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
-  auto nanos = (boost::posix_time::microsec_clock::universal_time() - epoch).total_nanoseconds();
-  pb::Timestamp timestamp;
-  timestamp.set_seconds(nanos / 1000000000);
-  timestamp.set_nanos(nanos % 1000000000);
-  return timestamp;
-}
-
 bool is_protobuf(rmq::Envelope::ptr_t const& envelope) {
   return envelope->Message()->ContentTypeIsSet() &&
          envelope->Message()->ContentType() == "application/x-protobuf";

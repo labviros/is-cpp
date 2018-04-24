@@ -9,14 +9,13 @@
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
 #include <boost/asio.hpp>
-#include <boost/date_time/gregorian/gregorian.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/optional.hpp>
 #include <boost/program_options.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <fstream>
+#include <is/msgs/utils.hpp>
 #include "logger.hpp"
 
 // Enable logging for protobuf messages
@@ -47,10 +46,6 @@ std::string hostname();
 // tools set the container hostname to be its id. The uid part is added to avoid name collisions
 // when running outside a container.
 std::string consumer_id();
-
-// Return the timestamp that represents the current time with nanosecond precision in relation
-// to the 1970/1/1 epoch.
-pb::Timestamp current_time();
 
 // Add key value pair to the message header
 template <typename T>
